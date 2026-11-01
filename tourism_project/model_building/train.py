@@ -4,6 +4,7 @@ import pandas as pd
 import xgboost as xgb
 import mlflow
 import mlflow.sklearn
+from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import make_column_transformer
 from sklearn.pipeline import make_pipeline
@@ -22,21 +23,31 @@ ytest = pd.read_csv("ytest.csv").values.ravel()
 categorical_cols = Xtrain.select_dtypes(include=["object"]).columns.tolist()
 numerical_cols = Xtrain.select_dtypes(exclude=["object"]).columns.tolist()
 
-# 2. Define preprocessing and XGBoost model pipeline
+# 2. Define preprocessing (with missing value imputation) and XGBoost model pipeline
+num_pipeline = make_pipeline(
+    SimpleImputer(strategy="median"),
+    StandardScaler()
+)
+cat_pipeline = make_pipeline(
+    SimpleImputer(strategy="most_frequent"),
+    OneHotEncoder(handle_unknown="ignore", sparse_output=False)
+)
+
 preprocessor = make_column_transformer(
-    (StandardScaler(), numerical_cols),
-    (OneHotEncoder(handle_unknown="ignore", sparse_output=False), categorical_cols)
+    (num_pipeline, numerical_cols),
+    (cat_pipeline, categorical_cols)
 )
 
 xgb_model = xgb.XGBClassifier(random_state=42, eval_metric="logloss")
 pipeline = make_pipeline(preprocessor, xgb_model)
 
-# Define hyperparameter grid
+# Define hyperparameter grid (including scale_pos_weight for class imbalance)
 param_grid = {
     "xgbclassifier__n_estimators": [50, 100, 150],
     "xgbclassifier__max_depth": [3, 5, 7],
     "xgbclassifier__learning_rate": [0.05, 0.1, 0.2],
-    "xgbclassifier__subsample": [0.8, 1.0]
+    "xgbclassifier__subsample": [0.8, 1.0],
+    "xgbclassifier__scale_pos_weight": [1, 3, 4]
 }
 
 # 3. Configure MLflow tracking and tune model
